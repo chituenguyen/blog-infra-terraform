@@ -1,0 +1,20 @@
+# direnv
+.envrc
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform.lock.hcl
+
+# Secrets
+!terraform.tfvars.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
