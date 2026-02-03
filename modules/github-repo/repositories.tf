@@ -40,7 +40,7 @@ resource "github_branch_protection" "this" {
 
   required_pull_request_reviews {
     required_approving_review_count = each.value.config.required_approvals
-    dismiss_stale_reviews            = each.value.config.dismiss_stale_reviews
+    dismiss_stale_reviews           = each.value.config.dismiss_stale_reviews
   }
 
   dynamic "required_status_checks" {

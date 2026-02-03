@@ -36,9 +36,9 @@ locals {
   }
 
   protected_main_and_dev = {
-    main     = local.main_protection
-    dev      = local.dev_protection
-    "k8s/*"  = local.k8s_pattern_protection  # pattern: any branch starting with k8s/
+    main    = local.main_protection
+    dev     = local.dev_protection
+    "k8s/*" = local.k8s_pattern_protection # pattern: any branch starting with k8s/
   }
 
   # Collaborators applied to all repos (invite + permission)
@@ -54,27 +54,36 @@ locals {
     }
 
     "blog-service-ui" = {
-      description       = "Blog UI service"
+      description        = "Blog UI service"
       protected_branches = local.protected_main_and_dev
-      collaborators     = local.common_collaborators
+      collaborators      = local.common_collaborators
     }
 
     "blog-service-consumer" = {
-      description       = "Blog consumer service"
+      description        = "Blog consumer service"
       protected_branches = local.protected_main_and_dev
-      collaborators     = local.common_collaborators
+      collaborators      = local.common_collaborators
     }
 
     "blog-helm-charts" = {
-      description       = "Helm charts for blog services"
+      description        = "Helm charts for blog services"
       protected_branches = local.protected_main_and_dev
-      collaborators     = local.common_collaborators
+      collaborators      = local.common_collaborators
     }
 
     "blog-platform-k8s" = {
-      description       = "Kubernetes platform configs"
+      description        = "Kubernetes platform configs"
       protected_branches = local.protected_main_and_dev
-      collaborators     = local.common_collaborators
+      collaborators      = local.common_collaborators
+    }
+  }
+
+  # ---------------------------------------------------------------------------
+  # Cloudflare R2 buckets
+  # ---------------------------------------------------------------------------
+  r2_buckets = {
+    "blog-media" = {
+      location = "APAC"
     }
   }
 }
@@ -83,4 +92,11 @@ module "github_repo" {
   source = "./modules/github-repo"
 
   repositories = local.repositories
+}
+
+module "cloudflare_r2" {
+  source = "./modules/cloudflare/r2"
+
+  account_id = var.cloudflare_account_id
+  buckets    = local.r2_buckets
 }
