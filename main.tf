@@ -200,6 +200,56 @@ module "k3s" {
   vpn_clients = each.value.vpn_clients
 }
 
+# ---------------------------------------------------------------------------
+# AWS EFS (Persistent Storage)
+# ---------------------------------------------------------------------------
+module "efs" {
+  source = "./modules/aws/efs"
+
+  name                       = "blog-efs"
+  vpc_id                     = module.k3s["blog-k3s"].vpc_id
+  subnet_id                  = module.k3s["blog-k3s"].subnet_id
+  allowed_security_group_ids = [module.k3s["blog-k3s"].security_group_id]
+  encrypted                  = true
+  performance_mode           = "generalPurpose"
+  throughput_mode            = "bursting"
+
+  tags = {
+    Environment = "dev"
+    Project     = "blog"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# AWS RDS PostgreSQL
+# ---------------------------------------------------------------------------
+module "rds" {
+  source = "./modules/aws/rds"
+
+  name                       = "blog-db"
+  vpc_id                     = module.k3s["blog-k3s"].vpc_id
+  vpc_cidr                   = "10.0.0.0/16"
+  availability_zones         = ["ap-southeast-1a", "ap-southeast-1b"]
+  allowed_security_group_ids = [module.k3s["blog-k3s"].security_group_id]
+  allowed_cidr_blocks        = module.k3s["blog-k3s"].vpn_subnet != null ? [module.k3s["blog-k3s"].vpn_subnet] : []
+
+  engine          = "postgres"
+  engine_version  = "15"
+  instance_class  = "db.t3.micro"
+  allocated_storage = 20
+
+  database_name           = "blog"
+  username                = "blog_admin"
+  password                = var.db_password
+  backup_retention_period = 7
+  skip_final_snapshot     = true
+
+  tags = {
+    Environment = "dev"
+    Project     = "blog"
+  }
+}
+
 output "k3s_clusters" {
   description = "K3s cluster connection details"
   value = {
@@ -220,4 +270,24 @@ output "k3s_clusters" {
 output "dns_records" {
   description = "Cloudflare DNS records"
   value       = module.cloudflare_dns.records
+}
+
+output "efs" {
+  description = "EFS storage details"
+  value = {
+    file_system_id = module.efs.file_system_id
+    dns_name       = module.efs.dns_name
+    mount_command  = module.efs.mount_command
+  }
+}
+
+output "rds" {
+  description = "RDS database details"
+  value = {
+    endpoint      = module.rds.endpoint
+    address       = module.rds.address
+    port          = module.rds.port
+    database_name = module.rds.database_name
+    username      = module.rds.username
+  }
 }

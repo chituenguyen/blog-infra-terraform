@@ -54,3 +54,9 @@ variable "allowed_ssh_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "db_password" {
+  description = "Password for RDS database"
+  type        = string
+  sensitive   = true
+}

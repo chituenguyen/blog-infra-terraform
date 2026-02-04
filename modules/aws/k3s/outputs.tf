@@ -48,7 +48,17 @@ output "vpc_id" {
   value       = module.vpc.vpc_id
 }
 
+output "subnet_id" {
+  description = "Public subnet ID"
+  value       = module.vpc.public_subnet_id
+}
+
 output "security_group_id" {
   description = "Security group ID"
   value       = module.security_group.security_group_id
+}
+
+output "vpn_subnet" {
+  description = "VPN subnet CIDR"
+  value       = var.vpn_enabled ? var.vpn_subnet : null
 }
