@@ -10,6 +10,8 @@ Terraform repo quản lý hạ tầng cho blog: GitHub repos, Cloudflare (R2, DN
 | Cloudflare| R2 buckets (blog-media), DNS records (trỏ tới K3s) |
 | AWS       | VPC, security group, EC2 + K3s (cloud-init), WireGuard VPN |
 
+📄 **[K3s infra chi tiết](docs/k3s-infra.md)** — sơ đồ, ports, VPN, cách truy cập.
+
 ## Yêu cầu
 
 - Terraform ≥ 1.x

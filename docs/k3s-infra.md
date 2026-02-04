@@ -1,3 +1,10 @@
+# K3s infrastructure overview
+
+Tài liệu mô tả kiến trúc hạ tầng K3s do Terraform tạo: 1 EC2 chạy K3s single-node, WireGuard VPN để truy cập SSH/K8s API, HTTP/HTTPS public qua Traefik.
+
+## Sơ đồ tổng quan
+
+```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                                      INTERNET                                           │
 └─────────────────────────────────────────┬───────────────────────────────────────────────┘
@@ -17,7 +24,6 @@
    └────┬────┘                      └────┬─────┘                      └────┬─────┘
         │                                │                                 │
 ┌───────┴────────────────────────────────┴─────────────────────────────────┴───────────────┐
-│                                                                                          │
 │                              AWS VPC (10.0.0.0/16)                                       │
 │                              Region: ap-southeast-1                                      │
 │  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
@@ -32,7 +38,7 @@
 │  │  │                                                                              │  │  │
 │  │  │  ┌─────────────────────────────────────────────────────────────────────────┐ │  │  │
 │  │  │  │                    WireGuard VPN (wg0 interface)                        │ │  │  │
-│  │  │  │                    Server IP: 10.10.0.1/24                              │ │  │  │
+│  │  │  │                    Server IP: 10.10.0.1/24                               │ │  │  │
 │  │  │  │                    Port: UDP 51820                                      │ │  │  │
 │  │  │  │  ┌───────────────────────────────────────────────────────────────────┐  │ │  │  │
 │  │  │  │  │ Registered Peers:                                                 │  │ │  │  │
@@ -85,39 +91,46 @@
 │  │  │  WireGuard (:51820/UDP) ────────────────────────► Public (0.0.0.0/0)         │  │  │
 │  │  └──────────────────────────────────────────────────────────────────────────────┘  │  │
 │  └────────────────────────────────────────────────────────────────────────────────────┘  │
-│                                          │                                               │
 │  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
 │  │                              Internet Gateway                                      │  │
 │  └────────────────────────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
                                           │
-                                          │
 ┌─────────────────────────────────────────┴───────────────────────────────────────────────┐
 │                                   VPN CLIENTS                                           │
-│                                                                                         │
 │  ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐          │
 │  │       user1         │    │       user2         │    │       user3         │          │
 │  │   IP: 10.10.0.2     │    │   IP: 10.10.0.3     │    │   IP: 10.10.0.4     │          │
-│  │                     │    │                     │    │                     │          │
-│  │  ┌───────────────┐  │    │  ┌───────────────┐  │    │  ┌───────────────┐  │          │
-│  │  │ WireGuard     │  │    │  │ WireGuard     │  │    │  │ WireGuard     │  │          │
-│  │  │ Client        │  │    │  │ Client        │  │    │  │ Client        │  │          │
-│  │  └───────┬───────┘  │    │  └───────┬───────┘  │    │  └───────┬───────┘  │          │
-│  │          │          │    │          │          │    │          │          │          │
-│  │  ┌───────▼───────┐  │    │  ┌───────▼───────┐  │    │  ┌───────▼───────┐  │          │
-│  │  │   kubectl     │  │    │  │   kubectl     │  │    │  │   kubectl     │  │          │
-│  │  │   ssh         │  │    │  │   ssh         │  │    │  │   ssh         │  │          │
-│  │  └───────────────┘  │    │  └───────────────┘  │    │  └───────────────┘  │          │
+│  │  WireGuard + kubectl + ssh                                                          │
 │  └─────────────────────┘    └─────────────────────┘    └─────────────────────┘          │
-│                                                                                         │
-│  Access via VPN:                                                                        │
-│    • SSH:     ssh ubuntu@10.10.0.1                                                      │
-│    • kubectl: kubectl --server=https://10.10.0.1:6443 get nodes                         │
+│  Access via VPN: SSH ubuntu@10.10.0.1 | kubectl --server=https://10.10.0.1:6443 ...      │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                              PUBLIC USERS (Web Traffic)                                 │
-│                                                                                         │
-│    Browser ──► https://your-domain.com ──► Elastic IP ──► Traefik ──► Your Apps         │
-│                                                                                         │
+│  PUBLIC: Browser → https://your-domain.com → Elastic IP → Traefik → Your Apps           │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Ports & access
+
+| Port / Service   | Phạm vi truy cập | Mục đích |
+|------------------|------------------|----------|
+| **22 (SSH)**     | Chỉ VPN (10.10.0.0/24) | SSH vào EC2 |
+| **6443 (K8s API)** | Chỉ VPN | `kubectl` tới cluster |
+| **80 / 443**     | Public (0.0.0.0/0) | Traefik Ingress → blog-ui, blog-api |
+| **51820/UDP (WireGuard)** | Public | Kết nối VPN vào server |
+
+## Thành phần trên EC2
+
+- **WireGuard (wg0)**: VPN server 10.10.0.1/24, peers (user1, user2, user3) cấu hình trong Terraform.
+- **K3s**: Single-node, control plane + worker trên cùng instance; API server chỉ listen và chỉ cho phép từ VPN.
+- **Traefik**: Ingress HTTP/HTTPS public.
+- **CoreDNS, Local Path Provisioner**: Addons mặc định của K3s.
+
+## Truy cập sau khi apply
+
+- **Kubeconfig**: `terraform output` in ra lệnh lấy kubeconfig (chạy trên máy đã cài WireGuard và kết nối VPN).
+- **SSH**: `ssh ubuntu@10.10.0.1` (qua VPN) hoặc dùng `ssh_command` trong output.
+- **Web**: Domain trỏ Elastic IP qua Cloudflare DNS (module `cloudflare_dns`); user truy cập qua HTTPS → Traefik → workloads.
+
+Chi tiết biến và output: xem `main.tf` (locals `k3s_clusters`, `dns_records`) và `terraform output`.
