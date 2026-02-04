@@ -2,7 +2,9 @@
 
 Tài liệu mô tả kiến trúc hạ tầng K3s trên AWS:
 - **Compute**: EC2 t3.small chạy K3s single-node
-- **Network**: WireGuard VPN để truy cập SSH/K8s API, HTTP/HTTPS public qua Traefik
+- **Network**: WireGuard VPN để truy cập SSH/K8s API, HTTP/HTTPS public qua NGINX Ingress
+- **Ingress**: NGINX Ingress Controller (thay thế Traefik)
+- **Monitoring**: Prometheus + Grafana + node_exporter (kube-prometheus-stack)
 - **Storage**: AWS EFS cho persistent volumes
 - **Database**: AWS RDS PostgreSQL managed
 - **DNS**: Cloudflare DNS + Proxy
@@ -48,9 +50,17 @@ Tài liệu mô tả kiến trúc hạ tầng K3s trên AWS:
 │  │  │  │  │   :6443     │ │   Manager   │ │             │ │             │       │  │  │  │
 │  │  │  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘       │  │  │  │
 │  │  │  │  ┌─────────────┐ ┌─────────────┐ ┌──────────────────────────────┐      │  │  │  │
-│  │  │  │  │   Traefik   │ │   CoreDNS   │ │  Your Workloads              │      │  │  │  │
+│  │  │  │  │NGINX Ingress│ │   CoreDNS   │ │  Your Workloads              │      │  │  │  │
 │  │  │  │  │  :80/:443   │ │             │ │  blog-api | blog-ui | ...    │      │  │  │  │
 │  │  │  │  └─────────────┘ └─────────────┘ └──────────┬───────────────────┘      │  │  │  │
+│  │  │  │  ┌───────────────────────────────────────────────────────────────┐     │  │  │  │
+│  │  │  │  │              Monitoring Stack (kube-prometheus-stack)         │     │  │  │  │
+│  │  │  │  │  ┌───────────┐  ┌───────────┐  ┌─────────────┐                │     │  │  │  │
+│  │  │  │  │  │Prometheus │  │  Grafana  │  │node_exporter│                │     │  │  │  │
+│  │  │  │  │  │   :9090   │  │   :3000   │  │   :9100     │                │     │  │  │  │
+│  │  │  │  │  │  10Gi PV  │  │           │  │ (DaemonSet) │                │     │  │  │  │
+│  │  │  │  │  └───────────┘  └───────────┘  └─────────────┘                │     │  │  │  │
+│  │  │  │  └───────────────────────────────────────────────────────────────┘     │  │  │  │
 │  │  │  └─────────────────────────────────────────────┼──────────────────────────┘  │  │  │
 │  │  │                                                │                             │  │  │
 │  │  │  ┌─────────────────────────┐                   │                             │  │  │
@@ -88,7 +98,8 @@ Tài liệu mô tả kiến trúc hạ tầng K3s trên AWS:
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│  PUBLIC: Browser → Cloudflare (DNS+Proxy) → Elastic IP → Traefik → Your Apps            │
+│  PUBLIC: Browser → Cloudflare (DNS+Proxy) → Elastic IP → NGINX Ingress → Your Apps      │
+│          grafana.domain.com → Grafana | api.domain.com → blog-api | blog.domain.com →   │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -110,7 +121,20 @@ Tài liệu mô tả kiến trúc hạ tầng K3s trên AWS:
 - **OS**: Ubuntu 22.04 LTS
 - **Storage**: 30GB gp3
 - **WireGuard**: VPN server 10.10.0.1/24, 3 user slots
-- **K3s**: Single-node cluster với Traefik, CoreDNS, Local Path Provisioner
+- **K3s**: Single-node cluster với NGINX Ingress, CoreDNS, Local Path Provisioner
+
+### Ingress (NGINX)
+- **Type**: NGINX Ingress Controller (Helm)
+- **Mode**: hostPort (bind trực tiếp :80/:443)
+- **Metrics**: Enabled, scraped by Prometheus
+- **Routes**: grafana.domain, api.domain, blog.domain
+
+### Monitoring (kube-prometheus-stack)
+- **Prometheus**: TSDB với 10Gi storage, 7 ngày retention
+- **Grafana**: Dashboard UI, truy cập qua Ingress (grafana.domain.com)
+- **node_exporter**: DaemonSet thu thập metrics CPU/Memory/Disk/Network
+- **kube-state-metrics**: Metrics về K8s objects (pods, deployments, etc.)
+- **AlertManager**: Alert routing (2Gi storage)
 
 ### Storage (EFS)
 - **Type**: General Purpose, Bursting throughput
@@ -129,7 +153,7 @@ Tài liệu mô tả kiến trúc hạ tầng K3s trên AWS:
 ### DNS (Cloudflare)
 - **Records**: A records trỏ tới Elastic IP
 - **Proxy**: Enabled (DDoS, CDN, SSL)
-- **Subdomains**: @, blog, api
+- **Subdomains**: @, blog, api, grafana
 
 ## Chi phí ước tính
 
@@ -179,7 +203,31 @@ psql -h blog-db.xxx.rds.amazonaws.com -U blog_admin -d blog
 # Password: TF_VAR_db_password
 ```
 
-### 5. Mount EFS (trong K3s pod)
+### 5. Truy cập Grafana
+```bash
+# Public access (qua Cloudflare)
+https://grafana.your-domain.com
+# Login: admin / <grafana_admin_password từ tfvars>
+```
+
+### 6. Truy cập Prometheus (qua VPN + port-forward)
+```bash
+# Kết nối VPN trước, sau đó:
+kubectl port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090 -n monitoring
+
+# Mở browser: http://localhost:9090
+```
+
+### 7. Check monitoring pods
+```bash
+# NGINX Ingress
+kubectl get pods -n ingress-nginx
+
+# Monitoring stack
+kubectl get pods -n monitoring
+```
+
+### 8. Mount EFS (trong K3s pod)
 ```yaml
 apiVersion: v1
 kind: PersistentVolume
@@ -221,8 +269,17 @@ terraform output dns_records     # Cloudflare DNS records
 | File | Mô tả |
 |------|-------|
 | `main.tf` | Module calls, locals (k3s_clusters, dns_records) |
-| `variables.tf` | Input variables (credentials, ssh_key, db_password) |
-| `modules/aws/k3s/` | K3s + VPC + WireGuard |
+| `variables.tf` | Input variables (credentials, ssh_key, db_password, grafana_admin_password, domain) |
+| `modules/aws/k3s/` | K3s + VPC + WireGuard + NGINX Ingress + Monitoring |
+| `modules/aws/k3s/cloud-init.yaml.tftpl` | Cloud-init script cài đặt K3s, Helm, NGINX, kube-prometheus-stack |
 | `modules/aws/efs/` | EFS file system |
 | `modules/aws/rds/` | RDS PostgreSQL |
 | `modules/cloudflare/dns/` | DNS records |
+
+## New Variables (terraform.tfvars)
+
+```hcl
+# Thêm vào terraform.tfvars
+grafana_admin_password = "your-secure-password"
+domain                 = "your-domain.com"
+```

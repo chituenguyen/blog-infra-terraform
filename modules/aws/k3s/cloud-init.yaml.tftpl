@@ -19,13 +19,14 @@ write_files:
       # Log output
       exec > >(tee /var/log/k3s-install.log) 2>&1
 
-      # Install K3s
+      # Install K3s (disable Traefik, we'll use NGINX Ingress)
       curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" sh -s - server \
         --write-kubeconfig-mode 644 \
         --tls-san "${public_ip}" \
 %{ if vpn_enabled ~}
         --tls-san "10.10.0.1" \
 %{ endif ~}
+        --disable=traefik \
         --node-name "${node_name}"
 
       # Wait for K3s to be ready
@@ -46,6 +47,71 @@ write_files:
       chown -R ubuntu:ubuntu /home/ubuntu/.kube
 
       echo "K3s installation complete!"
+
+  - path: /opt/monitoring-install.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euxo pipefail
+
+      # Log output
+      exec > >(tee /var/log/monitoring-install.log) 2>&1
+
+      export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+      # Install Helm
+      echo "Installing Helm..."
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      # Wait for K3s to be fully ready
+      until kubectl get nodes 2>/dev/null | grep -q " Ready"; do
+        echo "Waiting for K3s to be ready..."
+        sleep 5
+      done
+
+      # Add Helm repos
+      echo "Adding Helm repositories..."
+      helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+      helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+      helm repo update
+
+      # Install NGINX Ingress Controller with hostPort
+      echo "Installing NGINX Ingress Controller..."
+      helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+        --namespace ingress-nginx --create-namespace \
+        --set controller.hostPort.enabled=true \
+        --set controller.service.type=ClusterIP \
+        --set controller.metrics.enabled=true \
+        --set controller.metrics.serviceMonitor.enabled=true \
+        --set controller.admissionWebhooks.enabled=false \
+        --wait --timeout 5m
+
+      # Wait for NGINX Ingress to be ready
+      echo "Waiting for NGINX Ingress to be ready..."
+      kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=300s
+
+%{ if grafana_password != "" && domain != "" ~}
+      # Install kube-prometheus-stack (Prometheus, Grafana, node_exporter, kube-state-metrics)
+      echo "Installing kube-prometheus-stack..."
+      helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+        --namespace monitoring --create-namespace \
+        --set grafana.adminPassword="${grafana_password}" \
+        --set grafana.ingress.enabled=true \
+        --set grafana.ingress.ingressClassName=nginx \
+        --set 'grafana.ingress.hosts[0]=grafana.${domain}' \
+        --set prometheus.prometheusSpec.retention=7d \
+        --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName=local-path \
+        --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
+        --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=local-path \
+        --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=2Gi \
+        --wait --timeout 10m
+
+      echo "Monitoring stack installed successfully!"
+%{ else ~}
+      echo "Skipping monitoring stack (grafana_password or domain not configured)"
+%{ endif ~}
+
+      echo "All installations complete!"
 
 %{ if vpn_enabled ~}
   - path: /opt/wireguard-setup.sh
@@ -138,3 +204,4 @@ runcmd:
   - /opt/wireguard-setup.sh
 %{ endif ~}
   - /opt/k3s-install.sh
+  - /opt/monitoring-install.sh

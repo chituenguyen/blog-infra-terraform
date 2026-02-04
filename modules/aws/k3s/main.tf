@@ -113,13 +113,15 @@ resource "aws_instance" "this" {
   }
 
   user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
-    k3s_version = var.k3s_version
-    public_ip   = aws_eip.this.public_ip
-    node_name   = var.name
-    vpn_enabled = var.vpn_enabled
-    vpn_subnet  = var.vpn_subnet
-    vpn_port    = var.vpn_port
-    vpn_clients = var.vpn_clients
+    k3s_version      = var.k3s_version
+    public_ip        = aws_eip.this.public_ip
+    node_name        = var.name
+    vpn_enabled      = var.vpn_enabled
+    vpn_subnet       = var.vpn_subnet
+    vpn_port         = var.vpn_port
+    vpn_clients      = var.vpn_clients
+    grafana_password = var.grafana_admin_password
+    domain           = var.domain
   })
 
   tags = merge(var.tags, {

@@ -95,3 +95,19 @@ variable "vpn_clients" {
   }))
   default = {}
 }
+
+# ---------------------------------------------------------------------------
+# Monitoring Stack
+# ---------------------------------------------------------------------------
+variable "grafana_admin_password" {
+  description = "Grafana admin password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "domain" {
+  description = "Root domain for ingress (e.g., example.com)"
+  type        = string
+  default     = ""
+}

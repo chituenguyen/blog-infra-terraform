@@ -114,6 +114,13 @@ locals {
       content = ""
       proxied = true
     }
+    # Grafana subdomain
+    "grafana" = {
+      type    = "A"
+      name    = "grafana"
+      content = ""
+      proxied = true
+    }
   }
 
   # ---------------------------------------------------------------------------
@@ -198,6 +205,10 @@ module "k3s" {
   vpn_subnet  = each.value.vpn_subnet
   vpn_port    = each.value.vpn_port
   vpn_clients = each.value.vpn_clients
+
+  # Monitoring
+  grafana_admin_password = var.grafana_admin_password
+  domain                 = var.domain
 }
 
 # ---------------------------------------------------------------------------

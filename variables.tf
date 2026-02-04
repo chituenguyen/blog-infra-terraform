@@ -60,3 +60,14 @@ variable "db_password" {
   type        = string
   sensitive   = true
 }
+
+variable "grafana_admin_password" {
+  description = "Grafana admin password"
+  type        = string
+  sensitive   = true
+}
+
+variable "domain" {
+  description = "Root domain for DNS records (e.g., example.com)"
+  type        = string
+}
