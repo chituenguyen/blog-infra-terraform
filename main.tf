@@ -187,6 +187,10 @@ module "k3s" {
   source   = "./modules/aws/k3s"
   for_each = local.k3s_clusters
 
+  providers = {
+    aws = aws.compute
+  }
+
   name               = each.key
   instance_type      = each.value.instance_type
   availability_zone  = each.value.availability_zone
@@ -217,6 +221,10 @@ module "k3s" {
 module "efs" {
   source = "./modules/aws/efs"
 
+  providers = {
+    aws = aws.storage
+  }
+
   name                       = "blog-efs"
   vpc_id                     = module.k3s["blog-k3s"].vpc_id
   subnet_id                  = module.k3s["blog-k3s"].subnet_id
@@ -236,6 +244,10 @@ module "efs" {
 # ---------------------------------------------------------------------------
 module "rds" {
   source = "./modules/aws/rds"
+
+  providers = {
+    aws = aws.database
+  }
 
   name                       = "blog-db"
   vpc_id                     = module.k3s["blog-k3s"].vpc_id
