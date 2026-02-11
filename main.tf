@@ -121,6 +121,13 @@ locals {
       content = ""
       proxied = true
     }
+    # WWW subdomain (CNAME to root for redirect)
+    "www" = {
+      type    = "CNAME"
+      name    = "www"
+      content = "" # Will be set to var.domain
+      proxied = true
+    }
   }
 
   # ---------------------------------------------------------------------------
@@ -177,10 +184,17 @@ module "cloudflare_dns" {
     for name, record in local.dns_records : name => {
       type    = record.type
       name    = record.name
-      content = module.k3s["blog-k3s"].public_ip
+      content = record.type == "CNAME" ? var.domain : module.k3s["blog-k3s"].public_ip
       proxied = record.proxied
     }
   }
+}
+
+module "cloudflare_zone_settings" {
+  source = "./modules/cloudflare/zone-settings"
+
+  zone_id = var.cloudflare_zone_id
+  domain  = var.domain
 }
 
 module "k3s" {
@@ -256,9 +270,9 @@ module "rds" {
   allowed_security_group_ids = [module.k3s["blog-k3s"].security_group_id]
   allowed_cidr_blocks        = module.k3s["blog-k3s"].vpn_subnet != null ? [module.k3s["blog-k3s"].vpn_subnet] : []
 
-  engine          = "postgres"
-  engine_version  = "15"
-  instance_class  = "db.t3.micro"
+  engine            = "postgres"
+  engine_version    = "15"
+  instance_class    = "db.t3.micro"
   allocated_storage = 20
 
   database_name           = "blog"
@@ -277,15 +291,15 @@ output "k3s_clusters" {
   description = "K3s cluster connection details"
   value = {
     for name, cluster in module.k3s : name => {
-      public_ip              = cluster.public_ip
-      private_ip             = cluster.private_ip
-      instance_id            = cluster.instance_id
-      ssh_command            = cluster.ssh_command
-      kubeconfig_command     = cluster.kubeconfig_command
-      vpn_enabled            = cluster.vpn_enabled
-      vpn_endpoint           = cluster.vpn_endpoint
-      vpn_server_ip          = cluster.vpn_server_ip
-      vpn_client_config_cmd  = cluster.vpn_client_config_command
+      public_ip             = cluster.public_ip
+      private_ip            = cluster.private_ip
+      instance_id           = cluster.instance_id
+      ssh_command           = cluster.ssh_command
+      kubeconfig_command    = cluster.kubeconfig_command
+      vpn_enabled           = cluster.vpn_enabled
+      vpn_endpoint          = cluster.vpn_endpoint
+      vpn_server_ip         = cluster.vpn_server_ip
+      vpn_client_config_cmd = cluster.vpn_client_config_command
     }
   }
 }
@@ -312,5 +326,13 @@ output "rds" {
     port          = module.rds.port
     database_name = module.rds.database_name
     username      = module.rds.username
+  }
+}
+
+output "zone_settings" {
+  description = "Cloudflare zone settings"
+  value = {
+    zone_settings_id = module.cloudflare_zone_settings.zone_settings_id
+    page_rule_ids    = module.cloudflare_zone_settings.page_rule_ids
   }
 }
